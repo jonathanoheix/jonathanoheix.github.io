@@ -129,6 +129,7 @@ function playNextStep() {
     stopPlayback();
     return;
   }
+  console.log("Notes détectées :", osmd.cursor.GNotesUnderCursor());
 
   const iterator = osmd.cursor.iterator;
   let notesToPlay = [];
