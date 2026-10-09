@@ -123,7 +123,8 @@ function stopPlayback() {
   isPlaying = false;
   if (currentTimeout) clearTimeout(currentTimeout);
 
-  if (osmd) {
+  // Sécuriser l'accès au curseur OSMD
+  if (osmd && osmd.cursor) {
     osmd.cursor.reset();
     osmd.cursor.hide();
   }
