@@ -1,10 +1,9 @@
-// 1. Liste des partitions disponibles dans le dossier 'scores/'
+// 1. Liste des partitions
 const SCORES = [
-  { title: "Ma Composition", file: "scores/ma-composition.mxl" },
-  { title: "Autre Morceau", file: "scores/autre-morceau.musicxml" }
+  { title: "Ma Composition", file: "scores/ma-composition.mxl" }
 ];
 
-// Initialisation d'OSMD
+// Initialisation OSMD
 const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmd-container", {
   autoResize: true,
   drawTitle: true,
@@ -21,8 +20,9 @@ const btnPlay = document.getElementById("btn-play");
 const btnStop = document.getElementById("btn-stop");
 const statusDiv = document.getElementById("status");
 
-// 2. Remplir le menu déroulant
+// 2. Remplir le select
 function populateSelect() {
+  if (!scoreSelect) return;
   scoreSelect.innerHTML = "";
   SCORES.forEach((score) => {
     const opt = document.createElement("option");
@@ -32,7 +32,7 @@ function populateSelect() {
   });
 }
 
-// 3. Charger une partition
+// 3. Charger la partition
 async function loadScore(filePath) {
   stopPlayback();
   if (statusDiv) statusDiv.textContent = "Chargement de la partition...";
@@ -43,7 +43,7 @@ async function loadScore(filePath) {
     if (statusDiv) statusDiv.textContent = "";
   } catch (err) {
     console.error("Erreur de chargement :", err);
-    if (statusDiv) statusDiv.textContent = "Erreur : impossible de charger la partition (" + filePath + ")";
+    if (statusDiv) statusDiv.textContent = "Erreur de chargement : " + filePath;
   }
 }
 
@@ -53,28 +53,26 @@ if (SCORES.length > 0) {
   loadScore(SCORES[0].file);
 }
 
-scoreSelect.addEventListener("change", (e) => {
-  loadScore(e.target.value);
-});
+if (scoreSelect) {
+  scoreSelect.addEventListener("change", (e) => {
+    loadScore(e.target.value);
+  });
+}
 
-// 4. Synthétiseur Piano Web Audio natif (zéro fichier externe)
-function playPianoNote(midiNote, duration = 0.8) {
-  if (!audioCtx) return;
+// 4. Synthétiseur Piano Web Audio (Natif)
+function playNote(midiNote, duration = 0.8) {
+  if (!audioCtx || !midiNote) return;
 
-  // Calcul de la fréquence de la note (A4 = 440Hz = MIDI 69)
   const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
-
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
 
-  // Onde combinée pour imiter un son de piano doux
   osc.type = 'triangle';
   osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
 
-  // Enveloppe d'amplitude (Attaque rapide + Atténuation exponentielle)
   const now = audioCtx.currentTime;
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+  gain.gain.linearRampToValueAtTime(0.3, now + 0.01);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
   osc.connect(gain);
@@ -84,7 +82,17 @@ function playPianoNote(midiNote, duration = 0.8) {
   osc.stop(now + duration);
 }
 
-// 5. Gestion du bouton Jouer
+// Convertir un Pitch OSMD en note MIDI
+function getMidiFromPitch(pitch) {
+  if (!pitch) return null;
+  const noteOffsets = [0, 2, 4, 5, 7, 9, 11]; // C, D, E, F, G, A, B
+  const base = noteOffsets[pitch.fundamentalNote] || 0;
+  const accidental = pitch.AccidentalHalfTones || 0;
+  const octave = pitch.Octave + 1;
+  return (octave * 12) + base + accidental;
+}
+
+// 5. Lecture
 btnPlay.addEventListener("click", async () => {
   if (isPlaying) return;
 
@@ -93,7 +101,6 @@ btnPlay.addEventListener("click", async () => {
     return;
   }
 
-  // Démarrer/Débloquer l'AudioContext au clic utilisateur
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -105,9 +112,7 @@ btnPlay.addEventListener("click", async () => {
   isPlaying = true;
   btnPlay.disabled = true;
   btnStop.disabled = false;
-  btnPlay.innerText = "▶ Lecture...";
 
-  // Afficher et placer le curseur
   osmd.cursor.show();
   if (osmd.cursor.iterator.EndReached) {
     osmd.cursor.reset();
@@ -119,55 +124,59 @@ btnPlay.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", stopPlayback);
 
-// 6. Boucle de lecture
 function playNextStep() {
   if (!isPlaying || osmd.cursor.iterator.EndReached) {
     stopPlayback();
     return;
   }
 
-  // Récupérer les notes sous le curseur
+  const iterator = osmd.cursor.iterator;
+  let notesToPlay = [];
+
+  // Stratégie 1 : Récupérer via les éléments sous le curseur
   const gNotes = osmd.cursor.GNotesUnderCursor();
-
   if (gNotes && gNotes.length > 0) {
-    for (let i = 0; i < gNotes.length; i++) {
-      const gNote = gNotes[i];
-      const note = gNote.sourceNote;
-
-      if (note && !note.isRest && note.Pitch) {
-        const pitch = note.Pitch;
-        const noteOffsets = [0, 2, 4, 5, 7, 9, 11]; // C, D, E, F, G, A, B
-        const baseNote = noteOffsets[pitch.fundamentalNote] || 0;
-        const accidental = pitch.AccidentalHalfTones || 0;
-        const octave = pitch.Octave + 1;
-        const midiNote = (octave * 12) + baseNote + accidental;
-
-        // Jouer le son avec le synthétiseur natif
-        playPianoNote(midiNote, 1.2);
+    for (const gn of gNotes) {
+      if (gn.sourceNote && !gn.sourceNote.isRest && gn.sourceNote.Pitch) {
+        notesToPlay.push(gn.sourceNote);
       }
     }
   }
 
-  // Calcul du tempo
-  const iterator = osmd.cursor.iterator;
-  const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
-  
-  let durationInSeconds = 0.5;
-  if (gNotes && gNotes[0] && gNotes[0].sourceNote && gNotes[0].sourceNote.Length) {
-    const realValue = gNotes[0].sourceNote.Length.RealValue;
-    if (realValue > 0) {
-      durationInSeconds = (4 * 60 / bpm) * realValue;
+  // Stratégie 2 (secours) : Récupérer via les VoiceEntries
+  if (notesToPlay.length === 0 && iterator.CurrentVoiceEntries) {
+    for (const ve of iterator.CurrentVoiceEntries) {
+      if (ve.Notes) {
+        for (const n of ve.Notes) {
+          if (!n.isRest && n.Pitch) notesToPlay.push(n);
+        }
+      }
     }
   }
 
-  // Avancer le curseur
+  // Jouer les notes identifiées
+  for (const note of notesToPlay) {
+    const midi = getMidiFromPitch(note.Pitch);
+    if (midi) playNote(midi, 1.0);
+  }
+
+  // Calcul du tempo
+  const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
+  let durationInSeconds = 0.5;
+
+  if (notesToPlay.length > 0 && notesToPlay[0].Length) {
+    const realVal = notesToPlay[0].Length.RealValue;
+    if (realVal > 0) {
+      durationInSeconds = (4 * 60 / bpm) * realVal;
+    }
+  }
+
+  // Avancer
   osmd.cursor.next();
 
-  // Programmer la note suivante
-  currentTimeout = setTimeout(playNextStep, Math.max(durationInSeconds * 1000, 120));
+  currentTimeout = setTimeout(playNextStep, Math.max(durationInSeconds * 1000, 150));
 }
 
-// 7. Arrêt de la lecture
 function stopPlayback() {
   isPlaying = false;
   if (currentTimeout) clearTimeout(currentTimeout);
@@ -179,5 +188,4 @@ function stopPlayback() {
 
   btnPlay.disabled = false;
   btnStop.disabled = true;
-  btnPlay.innerText = "▶ Jouer";
 }
