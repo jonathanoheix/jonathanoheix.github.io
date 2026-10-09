@@ -1,9 +1,9 @@
-// 1. Liste des partitions
+// 1. Liste des partitions disponibles dans le dossier 'scores/'
 const SCORES = [
   { title: "Ma Composition", file: "scores/ma-composition.mxl" }
 ];
 
-// Initialisation OSMD
+// Initialisation d'OSMD
 const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmd-container", {
   autoResize: true,
   drawTitle: true,
@@ -20,7 +20,7 @@ const btnPlay = document.getElementById("btn-play");
 const btnStop = document.getElementById("btn-stop");
 const statusDiv = document.getElementById("status");
 
-// 2. Remplir le select
+// 2. Remplir le menu déroulant
 function populateSelect() {
   if (!scoreSelect) return;
   scoreSelect.innerHTML = "";
@@ -32,7 +32,7 @@ function populateSelect() {
   });
 }
 
-// 3. Charger la partition
+// 3. Charger une partition dans OSMD
 async function loadScore(filePath) {
   stopPlayback();
   if (statusDiv) statusDiv.textContent = "Chargement de la partition...";
@@ -47,7 +47,7 @@ async function loadScore(filePath) {
   }
 }
 
-// Initialisation
+// Initialisation au démarrage
 populateSelect();
 if (SCORES.length > 0) {
   loadScore(SCORES[0].file);
@@ -59,10 +59,11 @@ if (scoreSelect) {
   });
 }
 
-// 4. Synthétiseur Piano Web Audio (Natif)
+// 4. Synthétiseur Piano Web Audio natif
 function playNote(midiNote, duration = 0.8) {
   if (!audioCtx || !midiNote) return;
 
+  // Calcul de la fréquence (A4 = 440Hz = MIDI 69)
   const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
@@ -82,18 +83,33 @@ function playNote(midiNote, duration = 0.8) {
   osc.stop(now + duration);
 }
 
-// Convertir un Pitch OSMD en note MIDI
+// Conversion pitch OSMD -> code MIDI robuste
 function getMidiFromPitch(pitch) {
   if (!pitch) return null;
-  const noteOffsets = [0, 2, 4, 5, 7, 9, 11]; // C, D, E, F, G, A, B
-  const base = noteOffsets[pitch.fundamentalNote] || 0;
-  const accidental = pitch.AccidentalHalfTones || 0;
-  const octave = pitch.Octave + 1;
+
+  // Récupérer la note fondamentale (0 = C, 1 = D, 2 = E, 3 = F, 4 = G, 5 = A, 6 = B)
+  const fund = pitch.fundamentalNote !== undefined ? pitch.fundamentalNote : pitch.FundamentalNote;
+  if (fund === undefined) return null;
+
+  const noteOffsets = [0, 2, 4, 5, 7, 9, 11];
+  const base = noteOffsets[fund] || 0;
+
+  // Récupérer l'altération (# / b)
+  const accidental = pitch.accidentalHalfTones !== undefined ? pitch.accidentalHalfTones : (pitch.AccidentalHalfTones || 0);
+
+  // Récupérer l'octave
+  const oct = pitch.octave !== undefined ? pitch.octave : pitch.Octave;
+  if (oct === undefined) return null;
+
+  const octave = oct + 1; // Transposition OSMD -> MIDI
+
   return (octave * 12) + base + accidental;
 }
 
-// 5. Lecture
+// 5. Gestion de la lecture
 btnPlay.addEventListener("click", async () => {
+  console.log("--> Clic sur Jouer détecté !");
+
   if (isPlaying) return;
 
   if (!osmd.sheet) {
@@ -101,6 +117,7 @@ btnPlay.addEventListener("click", async () => {
     return;
   }
 
+  // Initialisation de l'AudioContext
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -113,6 +130,7 @@ btnPlay.addEventListener("click", async () => {
   btnPlay.disabled = true;
   btnStop.disabled = false;
 
+  // Afficher et positionner le curseur
   osmd.cursor.show();
   if (osmd.cursor.iterator.EndReached) {
     osmd.cursor.reset();
@@ -124,60 +142,52 @@ btnPlay.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", stopPlayback);
 
+// 6. Boucle de lecture et synchronisation
 function playNextStep() {
   if (!isPlaying || osmd.cursor.iterator.EndReached) {
     stopPlayback();
     return;
   }
-  console.log("Notes détectées :", osmd.cursor.GNotesUnderCursor());
 
-  const iterator = osmd.cursor.iterator;
-  let notesToPlay = [];
-
-  // Stratégie 1 : Récupérer via les éléments sous le curseur
   const gNotes = osmd.cursor.GNotesUnderCursor();
-  if (gNotes && gNotes.length > 0) {
-    for (const gn of gNotes) {
-      if (gn.sourceNote && !gn.sourceNote.isRest && gn.sourceNote.Pitch) {
-        notesToPlay.push(gn.sourceNote);
-      }
-    }
-  }
 
-  // Stratégie 2 (secours) : Récupérer via les VoiceEntries
-  if (notesToPlay.length === 0 && iterator.CurrentVoiceEntries) {
-    for (const ve of iterator.CurrentVoiceEntries) {
-      if (ve.Notes) {
-        for (const n of ve.Notes) {
-          if (!n.isRest && n.Pitch) notesToPlay.push(n);
+  if (gNotes && gNotes.length > 0) {
+    for (let i = 0; i < gNotes.length; i++) {
+      const gNote = gNotes[i];
+      const note = gNote.sourceNote;
+
+      if (note && !note.isRest) {
+        // OSMD stocke parfois 'pitch' ou 'Pitch'
+        const pitch = note.pitch || note.Pitch;
+        const midi = getMidiFromPitch(pitch);
+
+        if (midi) {
+          console.log("Note jouée -> MIDI:", midi);
+          playNote(midi, 1.0);
         }
       }
     }
   }
 
-  // Jouer les notes identifiées
-  for (const note of notesToPlay) {
-    const midi = getMidiFromPitch(note.Pitch);
-    if (midi) playNote(midi, 1.0);
-  }
-
-  // Calcul du tempo
+  // Calcul du tempo et du délai
+  const iterator = osmd.cursor.iterator;
   const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
-  let durationInSeconds = 0.5;
 
-  if (notesToPlay.length > 0 && notesToPlay[0].Length) {
-    const realVal = notesToPlay[0].Length.RealValue;
+  let durationInSeconds = 0.5;
+  if (gNotes && gNotes[0] && gNotes[0].sourceNote && gNotes[0].sourceNote.Length) {
+    const realVal = gNotes[0].sourceNote.Length.RealValue;
     if (realVal > 0) {
       durationInSeconds = (4 * 60 / bpm) * realVal;
     }
   }
 
-  // Avancer
+  // Avancer le curseur
   osmd.cursor.next();
 
   currentTimeout = setTimeout(playNextStep, Math.max(durationInSeconds * 1000, 150));
 }
 
+// 7. Arrêt de la lecture
 function stopPlayback() {
   isPlaying = false;
   if (currentTimeout) clearTimeout(currentTimeout);
