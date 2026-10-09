@@ -67,14 +67,31 @@ btnPlay.addEventListener("click", async () => {
     return;
   }
 
+  // 1. Initialiser l'AudioContext
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    btnPlay.innerText = "Chargement du son...";
-    piano = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano');
   }
 
   if (audioCtx.state === 'suspended') {
     await audioCtx.resume();
+  }
+
+  // 2. Charger l'instrument avec une URL SoundFont valide
+  if (!piano) {
+    btnPlay.innerText = "Chargement du son...";
+    try {
+      piano = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano', {
+        soundfont: 'MusyngKite',
+        nameToUrl: (name, sf, format) => {
+          return `https://gleitz.github.io/midi-js-soundfonts/${sf}/${name}-${format}.js`;
+        }
+      });
+    } catch (err) {
+      console.error("Erreur de chargement du piano :", err);
+      alert("Impossible de charger le son du piano.");
+      btnPlay.innerText = "▶ Jouer";
+      return;
+    }
   }
 
   isPlaying = true;
