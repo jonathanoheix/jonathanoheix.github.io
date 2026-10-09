@@ -1,10 +1,10 @@
-// 1. Liste des partitions disponibles dans votre dossier 'scores/'
+// 1. Liste des partitions disponibles dans le dossier 'scores/'
 const SCORES = [
   { title: "Ma Composition", file: "scores/ma-composition.mxl" },
   { title: "Autre Morceau", file: "scores/autre-morceau.musicxml" }
 ];
 
-// Initialisation OSMD
+// Initialisation d'OSMD
 const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmd-container", {
   autoResize: true,
   drawTitle: true,
@@ -13,7 +13,6 @@ const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmd-container", {
 });
 
 let audioCtx = null;
-let piano = null;
 let isPlaying = false;
 let currentTimeout = null;
 
@@ -33,7 +32,7 @@ function populateSelect() {
   });
 }
 
-// 3. Charger une partition dans OSMD
+// 3. Charger une partition
 async function loadScore(filePath) {
   stopPlayback();
   if (statusDiv) statusDiv.textContent = "Chargement de la partition...";
@@ -48,18 +47,44 @@ async function loadScore(filePath) {
   }
 }
 
-// Initialisation au démarrage
+// Initialisation
 populateSelect();
 if (SCORES.length > 0) {
   loadScore(SCORES[0].file);
 }
 
-// Changement de partition par l'utilisateur
 scoreSelect.addEventListener("change", (e) => {
   loadScore(e.target.value);
 });
 
-// 4. Gestion du bouton Jouer
+// 4. Synthétiseur Piano Web Audio natif (zéro fichier externe)
+function playPianoNote(midiNote, duration = 0.8) {
+  if (!audioCtx) return;
+
+  // Calcul de la fréquence de la note (A4 = 440Hz = MIDI 69)
+  const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  // Onde combinée pour imiter un son de piano doux
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+  // Enveloppe d'amplitude (Attaque rapide + Atténuation exponentielle)
+  const now = audioCtx.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start(now);
+  osc.stop(now + duration);
+}
+
+// 5. Gestion du bouton Jouer
 btnPlay.addEventListener("click", async () => {
   if (isPlaying) return;
 
@@ -68,7 +93,7 @@ btnPlay.addEventListener("click", async () => {
     return;
   }
 
-  // Initialisation de l'AudioContext
+  // Démarrer/Débloquer l'AudioContext au clic utilisateur
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -77,30 +102,12 @@ btnPlay.addEventListener("click", async () => {
     await audioCtx.resume();
   }
 
-  // Chargement de l'instrument SoundFont avec URL explicite MP3
-  if (!piano) {
-    btnPlay.innerText = "Chargement du son...";
-    try {
-      piano = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano', {
-        soundfont: 'MusyngKite',
-        nameToUrl: (name, sf) => {
-          return `https://gleitz.github.io/midi-js-soundfonts/${sf}/${name}-mp3.js`;
-        }
-      });
-    } catch (err) {
-      console.error("Erreur de chargement du piano :", err);
-      alert("Impossible de charger le son du piano.");
-      btnPlay.innerText = "▶ Jouer";
-      return;
-    }
-  }
-
   isPlaying = true;
   btnPlay.disabled = true;
   btnStop.disabled = false;
-  btnPlay.innerText = "▶ Jouer";
+  btnPlay.innerText = "▶ Lecture...";
 
-  // Positionner et afficher le curseur
+  // Afficher et placer le curseur
   osmd.cursor.show();
   if (osmd.cursor.iterator.EndReached) {
     osmd.cursor.reset();
@@ -112,14 +119,14 @@ btnPlay.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", stopPlayback);
 
-// 5. Boucle de lecture et synchronisation
+// 6. Boucle de lecture
 function playNextStep() {
   if (!isPlaying || osmd.cursor.iterator.EndReached) {
     stopPlayback();
     return;
   }
 
-  // Récupérer les notes graphiques situées directement sous le curseur
+  // Récupérer les notes sous le curseur
   const gNotes = osmd.cursor.GNotesUnderCursor();
 
   if (gNotes && gNotes.length > 0) {
@@ -135,14 +142,13 @@ function playNextStep() {
         const octave = pitch.Octave + 1;
         const midiNote = (octave * 12) + baseNote + accidental;
 
-        if (piano) {
-          piano.play(midiNote);
-        }
+        // Jouer le son avec le synthétiseur natif
+        playPianoNote(midiNote, 1.2);
       }
     }
   }
 
-  // Calcul du tempo et du délai avant la note suivante
+  // Calcul du tempo
   const iterator = osmd.cursor.iterator;
   const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
   
@@ -154,14 +160,14 @@ function playNextStep() {
     }
   }
 
-  // Avancer le curseur visuel
+  // Avancer le curseur
   osmd.cursor.next();
 
-  // Programment du pas suivant
-  currentTimeout = setTimeout(playNextStep, Math.max(durationInSeconds * 1000, 100));
+  // Programmer la note suivante
+  currentTimeout = setTimeout(playNextStep, Math.max(durationInSeconds * 1000, 120));
 }
 
-// 6. Arrêt de la lecture
+// 7. Arrêt de la lecture
 function stopPlayback() {
   isPlaying = false;
   if (currentTimeout) clearTimeout(currentTimeout);
