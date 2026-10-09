@@ -81,11 +81,12 @@ btnPlay.addEventListener("click", async () => {
     btnPlay.innerText = "Chargement du son...";
     try {
       piano = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano', {
-        soundfont: 'MusyngKite',
-        nameToUrl: (name, sf, format) => {
-          return `https://gleitz.github.io/midi-js-soundfonts/${sf}/${name}-${format}.js`;
-        }
-      });
+	  soundfont: 'MusyngKite',
+	  format: 'mp3',
+	  nameToUrl: (name, sf, format = 'mp3') => {
+	    return `https://gleitz.github.io/midi-js-soundfonts/${sf}/${name}-${format}.js`;
+	  }
+	});
     } catch (err) {
       console.error("Erreur de chargement du piano :", err);
       alert("Impossible de charger le son du piano.");
