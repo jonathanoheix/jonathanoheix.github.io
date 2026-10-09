@@ -3,27 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lecteur de partitions OSMD</title>
+  <title>Mes Partitions - GitHub Pages</title>
+  <link rel="icon" href="data:,">
 
-  <!-- OSMD (Rendu SVG) -->
+  <!-- OSMD -->
   <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
-  <!-- Soundfont-Player (Synthèse Web Audio) -->
+  <!-- Soundfont-Player -->
   <script src="https://cdn.jsdelivr.net/gh/danigb/soundfont-player@master/dist/soundfont-player.min.js"></script>
 
   <style>
     body { font-family: sans-serif; margin: 20px; text-align: center; }
-    #controls { margin-bottom: 20px; }
-    button { padding: 10px 20px; font-size: 16px; margin: 0 5px; cursor: pointer; }
+    #controls { 
+      margin-bottom: 20px; 
+      display: flex; 
+      gap: 10px; 
+      justify-content: center; 
+      align-items: center; 
+      flex-wrap: wrap; 
+    }
+    select, button { padding: 8px 14px; font-size: 15px; cursor: pointer; }
     #osmd-container { width: 100%; margin: 0 auto; text-align: left; }
+    #status { font-style: italic; color: #666; margin-top: 5px; }
   </style>
 </head>
 <body>
 
   <div id="controls">
+    <label for="score-select"><strong>Partition :</strong></label>
+    <select id="score-select">
+      <!-- Les options seront générées par app.js -->
+    </select>
+
     <button id="btn-play">▶ Jouer</button>
     <button id="btn-stop" disabled>⏹ Stop</button>
   </div>
 
+  <div id="status"></div>
   <div id="osmd-container"></div>
 
   <script src="app.js"></script>

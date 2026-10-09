@@ -1,4 +1,9 @@
-// Initialisation d'OSMD
+// 1. Liste des partitions disponibles dans votre dossier 'scores/'
+const SCORES = [
+  { title: "Etude n°1", file: "scores/etude1.mxl" }
+];
+
+// Initialisation OSMD
 const osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmd-container", {
   autoResize: true,
   drawTitle: true,
@@ -11,26 +16,60 @@ let piano = null;
 let isPlaying = false;
 let currentTimeout = null;
 
-// Remplacez par le chemin vers votre fichier MusicXML hébergé sur le dépôt
-const SCORE_URL = "scores/ma-composition.musicxml";
-
-// 1. Chargement de la partition
-osmd.load(SCORE_URL).then(() => {
-  osmd.render();
-  osmd.cursor.hide();
-}).catch(err => console.error("Erreur de chargement du fichier MusicXML :", err));
-
-// DOM Controls
+const scoreSelect = document.getElementById("score-select");
 const btnPlay = document.getElementById("btn-play");
 const btnStop = document.getElementById("btn-stop");
+const statusDiv = document.getElementById("status");
 
+// 2. Remplir le menu déroulant avec les partitions
+function populateSelect() {
+  scoreSelect.innerHTML = "";
+  SCORES.forEach((score, index) => {
+    const opt = document.createElement("option");
+    opt.value = score.file;
+    opt.textContent = score.title;
+    scoreSelect.appendChild(opt);
+  });
+}
+
+// 3. Charger une partition dans OSMD
+async function loadScore(filePath) {
+  stopPlayback();
+  statusDiv.textContent = "Chargement de la partition...";
+  try {
+    await osmd.load(filePath);
+    osmd.render();
+    osmd.cursor.hide();
+    statusDiv.textContent = "";
+  } catch (err) {
+    console.error("Erreur de chargement :", err);
+    statusDiv.textContent = "Erreur : impossible de charger la partition (" + filePath + ")";
+  }
+}
+
+// Initialisation au démarrage
+populateSelect();
+if (SCORES.length > 0) {
+  loadScore(SCORES[0].file);
+}
+
+// Changement de partition par l'utilisateur
+scoreSelect.addEventListener("change", (e) => {
+  loadScore(e.target.value);
+});
+
+// 4. Gestion de la lecture audio
 btnPlay.addEventListener("click", async () => {
   if (isPlaying) return;
 
-  // L'AudioContext doit être initialisé suite à un geste utilisateur
+  if (!osmd.sheet) {
+    alert("Aucune partition chargée.");
+    return;
+  }
+
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    btnPlay.innerText = "Chargement du piano...";
+    btnPlay.innerText = "Chargement du son...";
     piano = await Soundfont.instrument(audioCtx, 'acoustic_grand_piano');
   }
 
@@ -43,7 +82,6 @@ btnPlay.addEventListener("click", async () => {
   btnStop.disabled = false;
   btnPlay.innerText = "▶ Jouer";
 
-  // Réinitialiser le curseur s'il est à la fin
   if (osmd.cursor.iterator.EndReached) {
     osmd.cursor.reset();
   } else {
@@ -55,7 +93,6 @@ btnPlay.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", stopPlayback);
 
-// 2. Moteur de lecture et de synchronisation
 function playNextStep() {
   if (!isPlaying || osmd.cursor.iterator.EndReached) {
     stopPlayback();
@@ -64,40 +101,28 @@ function playNextStep() {
 
   const iterator = osmd.cursor.iterator;
   const currentVoiceEntries = iterator.CurrentVoiceEntries;
-
-  // Extraire le tempo dynamique de la mesure (défaut: 120 BPM)
   const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
 
-  // Récupérer les notes à jouer à cet instant précis
   if (currentVoiceEntries) {
     for (const voiceEntry of currentVoiceEntries) {
       for (const note of voiceEntry.Notes) {
-        // Ignorer les silences et les notes liées
         if (!note.isRest && note.Pitch) {
-          // Convertir le pitch OSMD en notation standard (ex: "C4")
-          const noteName = note.Pitch.ToString();
-          piano.play(noteName);
+          piano.play(note.Pitch.ToString());
         }
       }
     }
   }
 
-  // Avancer visuellement le curseur
   osmd.cursor.next();
 
-  // Calculer la durée de la figure de note courante
-  // (iterator.CurrentMeasureDuration() renvoie une fraction de mesure)
-  const durationInRealSeconds = (4 * 60 / bpm) * iterator.CurrentVoiceEntries[0]?.Notes[0]?.Length.RealValue || (60 / bpm);
-
-  // Planifier le pas suivant
+  const durationInRealSeconds = (4 * 60 / bpm) * (iterator.CurrentVoiceEntries?.[0]?.Notes?.[0]?.Length?.RealValue || (1/4));
   currentTimeout = setTimeout(playNextStep, durationInRealSeconds * 1000);
 }
 
-// 3. Arret de la lecture
 function stopPlayback() {
   isPlaying = false;
   if (currentTimeout) clearTimeout(currentTimeout);
-  
+
   if (osmd) {
     osmd.cursor.reset();
     osmd.cursor.hide();
