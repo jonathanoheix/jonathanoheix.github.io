@@ -118,23 +118,47 @@ function playNextStep() {
   }
 
   const iterator = osmd.cursor.iterator;
-  const currentVoiceEntries = iterator.CurrentVoiceEntries;
-  const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
+  const voiceEntries = iterator.CurrentVoiceEntries;
 
-  if (currentVoiceEntries) {
-    for (const voiceEntry of currentVoiceEntries) {
-      for (const note of voiceEntry.Notes) {
-        if (!note.isRest && note.Pitch) {
-          piano.play(note.Pitch.ToString());
+  // Parcourir toutes les voix à cet instant
+  if (voiceEntries && voiceEntries.length > 0) {
+    for (let i = 0; i < voiceEntries.length; i++) {
+      const entry = voiceEntries[i];
+      if (!entry || !entry.Notes) continue;
+
+      for (let j = 0; j < entry.Notes.length; j++) {
+        const note = entry.Notes[j];
+
+        // Vérifier que ce n'est pas un silence et que la note a un Pitch
+        if (note && !note.isRest && note.Pitch) {
+          // Alternative ultra-fiable : récupérer le numéro de note MIDI (ex: 60 pour C4)
+          const midiNote = note.Pitch.HalfTone + 12; // Transposition standard OSMD -> MIDI
+          
+          if (piano && typeof piano.play === 'function') {
+            // On peut jouer directement la note MIDI (nombre) ou le nom ("C4")
+            piano.play(midiNote);
+          }
         }
       }
     }
   }
 
+  // Avancer le curseur
   osmd.cursor.next();
 
-  const durationInRealSeconds = (4 * 60 / bpm) * (iterator.CurrentVoiceEntries?.[0]?.Notes?.[0]?.Length?.RealValue || (1/4));
-  currentTimeout = setTimeout(playNextStep, durationInRealSeconds * 1000);
+  // Calculer le délai avant la prochaine note
+  const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
+  
+  // Récupérer la durée de la note courante (défaut : croche/noire = ~0.25s à 0.5s)
+  let durationInSeconds = 0.5; // valeur de secours
+  if (voiceEntries && voiceEntries[0] && voiceEntries[0].Notes && voiceEntries[0].Notes[0]) {
+    const realValue = voiceEntries[0].Notes[0].Length.RealValue; // Ex: 0.25 pour une noire
+    if (realValue > 0) {
+      durationInSeconds = (4 * 60 / bpm) * realValue;
+    }
+  }
+
+  currentTimeout = setTimeout(playNextStep, durationInSeconds * 1000);
 }
 
 function stopPlayback() {
