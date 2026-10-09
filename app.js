@@ -111,6 +111,18 @@ btnPlay.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", stopPlayback);
 
+// Helper pour convertir une note OSMD en numéro MIDI (ex: C4 -> 60)
+function getMidiNumber(pitch) {
+  if (!pitch) return null;
+  // pitch.fundamentalNote : 0 = C, 1 = D, 2 = E, 3 = F, 4 = G, 5 = A, 6 = B
+  const noteOffsets = [0, 2, 4, 5, 7, 9, 11]; // Échelle chromatique (Do, Ré, Mi...)
+  const baseNote = noteOffsets[pitch.fundamentalNote] || 0;
+  const accidental = pitch.AccidentalHalfTones || 0; // Altérations (#, b)
+  const octave = pitch.Octave + 1; // OSMD octave standard (-1 pour MIDI)
+  
+  return (octave * 12) + baseNote + accidental;
+}
+
 function playNextStep() {
   if (!isPlaying || osmd.cursor.iterator.EndReached) {
     stopPlayback();
@@ -120,7 +132,7 @@ function playNextStep() {
   const iterator = osmd.cursor.iterator;
   const voiceEntries = iterator.CurrentVoiceEntries;
 
-  // Parcourir toutes les voix à cet instant
+  // 1. Jouer les notes de l'étape courante
   if (voiceEntries && voiceEntries.length > 0) {
     for (let i = 0; i < voiceEntries.length; i++) {
       const entry = voiceEntries[i];
@@ -129,13 +141,11 @@ function playNextStep() {
       for (let j = 0; j < entry.Notes.length; j++) {
         const note = entry.Notes[j];
 
-        // Vérifier que ce n'est pas un silence et que la note a un Pitch
+        // Ignorer les silences et vérifier la présence d'un Pitch
         if (note && !note.isRest && note.Pitch) {
-          // Alternative ultra-fiable : récupérer le numéro de note MIDI (ex: 60 pour C4)
-          const midiNote = note.Pitch.HalfTone + 12; // Transposition standard OSMD -> MIDI
+          const midiNote = getMidiNumber(note.Pitch);
           
-          if (piano && typeof piano.play === 'function') {
-            // On peut jouer directement la note MIDI (nombre) ou le nom ("C4")
+          if (midiNote !== null && piano) {
             piano.play(midiNote);
           }
         }
@@ -143,20 +153,24 @@ function playNextStep() {
     }
   }
 
-  // Avancer le curseur
+  // 2. Avancer le curseur visuel
   osmd.cursor.next();
 
-  // Calculer le délai avant la prochaine note
+  // 3. Calcul du tempo et du délai
   const bpm = osmd.sheet.SourceMeasures[iterator.CurrentMeasureIndex]?.TempoInBPM || 120;
   
-  // Récupérer la durée de la note courante (défaut : croche/noire = ~0.25s à 0.5s)
-  let durationInSeconds = 0.5; // valeur de secours
+  let durationInSeconds = 0.5; // Valeur par défaut (noire à 120 BPM)
+  
   if (voiceEntries && voiceEntries[0] && voiceEntries[0].Notes && voiceEntries[0].Notes[0]) {
-    const realValue = voiceEntries[0].Notes[0].Length.RealValue; // Ex: 0.25 pour une noire
-    if (realValue > 0) {
-      durationInSeconds = (4 * 60 / bpm) * realValue;
+    const length = voiceEntries[0].Notes[0].Length;
+    if (length && length.RealValue > 0) {
+      // RealValue représente la fraction de mesure (ex: 0.25 pour une noire)
+      durationInSeconds = (4 * 60 / bpm) * length.RealValue;
     }
   }
+
+  // Sécurité si la durée calculée est trop courte ou nulle
+  if (durationInSeconds <= 0) durationInSeconds = 0.25;
 
   currentTimeout = setTimeout(playNextStep, durationInSeconds * 1000);
 }
