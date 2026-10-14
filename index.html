@@ -10,6 +10,9 @@
            padding: .6rem 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
   h1 { font-size: 1.1rem; margin: 0; }
   select { font-size: 1rem; padding: .4rem .6rem; }
+  .dl { font-size: 1rem; padding: .4rem .8rem; border: 1px solid #888; border-radius: 4px;
+        background: #f7f7f7; color: #222; text-decoration: none; white-space: nowrap; }
+  .dl:hover { background: #eaeaea; }
   audio { flex: 1; min-width: 220px; height: 40px; }
   #pages { max-width: 1000px; margin: 1rem auto; padding: 0 .5rem; }
   #pages canvas { display: block; width: 100%; background: #fff; margin: 0 auto 1rem;
@@ -22,6 +25,7 @@
   <h1>Mes partitions</h1>
   <select id="picker"></select>
   <audio id="player" controls preload="none"></audio>
+  <a id="download" class="dl" download>⬇ PDF</a>
 </header>
 
 <div id="msg">Chargement…</div>
@@ -36,6 +40,7 @@
   const player = document.getElementById("player");
   const pagesEl = document.getElementById("pages");
   const msg = document.getElementById("msg");
+  const dl = document.getElementById("download");
 
   let currentPdf = null;
   let token = 0;
@@ -52,6 +57,8 @@
     const my = ++token;
     player.pause();
     player.src = "scores/" + encodeURIComponent(name) + ".mp3";
+    dl.href = "scores/" + encodeURIComponent(name) + ".pdf";
+    dl.download = name + ".pdf";
     pagesEl.innerHTML = "";
     msg.textContent = "Chargement de la partition…";
     msg.style.display = "block";
