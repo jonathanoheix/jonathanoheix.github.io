@@ -1,46 +1,100 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mes Partitions - GitHub Pages</title>
-  <link rel="icon" href="data:,">
-
-  <!-- OSMD -->
-  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
-  <!-- Soundfont-Player -->
-  <script src="https://cdn.jsdelivr.net/gh/danigb/soundfont-player@master/dist/soundfont-player.min.js"></script>
-
-  <style>
-    body { font-family: sans-serif; margin: 20px; text-align: center; }
-    #controls { 
-      margin-bottom: 20px; 
-      display: flex; 
-      gap: 10px; 
-      justify-content: center; 
-      align-items: center; 
-      flex-wrap: wrap; 
-    }
-    select, button { padding: 8px 14px; font-size: 15px; cursor: pointer; }
-    #osmd-container { width: 100%; margin: 0 auto; text-align: left; }
-    #status { font-style: italic; color: #666; margin-top: 5px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mes partitions</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f2f2f2; }
+  header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #ddd;
+           padding: .6rem 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 1.1rem; margin: 0; }
+  select { font-size: 1rem; padding: .4rem .6rem; }
+  audio { flex: 1; min-width: 220px; height: 40px; }
+  #pages { max-width: 1000px; margin: 1rem auto; padding: 0 .5rem; }
+  #pages canvas { display: block; width: 100%; background: #fff; margin: 0 auto 1rem;
+                  box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  #msg { text-align: center; color: #666; padding: 2rem; }
+</style>
 </head>
 <body>
+<header>
+  <h1>Mes partitions</h1>
+  <select id="picker"></select>
+  <audio id="player" controls preload="none"></audio>
+</header>
 
-  <div id="controls">
-    <label for="score-select"><strong>Partition :</strong></label>
-    <select id="score-select">
-      <!-- Les options seront générées par app.js -->
-    </select>
+<div id="msg">Chargement…</div>
+<div id="pages"></div>
 
-    <button id="btn-play">▶ Jouer</button>
-    <button id="btn-stop" disabled>⏹ Stop</button>
-  </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  <div id="status"></div>
-  <div id="osmd-container"></div>
+  const picker = document.getElementById("picker");
+  const player = document.getElementById("player");
+  const pagesEl = document.getElementById("pages");
+  const msg = document.getElementById("msg");
 
-  <script src="app.js"></script>
+  let currentPdf = null;
+  let token = 0;
+
+  // scores/index.json : ["sonate", "prelude"]  ->  scores/sonate.pdf + scores/sonate.mp3
+  async function init() {
+    const names = await (await fetch("scores/index.json")).json();
+    picker.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join("");
+    picker.onchange = () => select(picker.value);
+    if (names.length) select(names[0]);
+  }
+
+  async function select(name) {
+    const my = ++token;
+    player.pause();
+    player.src = "scores/" + encodeURIComponent(name) + ".mp3";
+    pagesEl.innerHTML = "";
+    msg.textContent = "Chargement de la partition…";
+    msg.style.display = "block";
+    try {
+      const pdf = await pdfjsLib.getDocument("scores/" + encodeURIComponent(name) + ".pdf").promise;
+      if (my !== token) return;
+      currentPdf = pdf;
+      await renderAll(my);
+      msg.style.display = "none";
+    } catch (e) {
+      console.error(e);
+      msg.textContent = "Impossible de charger la partition.";
+    }
+  }
+
+  async function renderAll(my) {
+    pagesEl.innerHTML = "";
+    const width = pagesEl.clientWidth;
+    const dpr = window.devicePixelRatio || 1;
+    for (let i = 1; i <= currentPdf.numPages; i++) {
+      const page = await currentPdf.getPage(i);
+      if (my !== token) return;
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: (width / base.width) * dpr });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      pagesEl.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    }
+  }
+
+  // Re-rendu si la largeur change (rotation du téléphone, redimensionnement)
+  let lastWidth = 0, timer;
+  window.addEventListener("resize", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const w = pagesEl.clientWidth;
+      if (currentPdf && w !== lastWidth) { lastWidth = w; renderAll(++token); }
+    }, 300);
+  });
+
+  init().catch(() => msg.textContent = "Impossible de lire scores/index.json");
+</script>
 </body>
 </html>
